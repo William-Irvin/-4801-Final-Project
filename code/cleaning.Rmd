@@ -1,0 +1,146 @@
+---
+title: "Data Cleaning"
+author: "William Irvin"
+date: "2025-11-12"
+output: html_document
+---
+#Loads in all needed data sets
+```{r setup}
+library(tidyverse)
+library(ggplot2)
+resistance_data <- read.csv("../data/raw/raw_data(data).csv")
+palma_Ratios <- read.csv("../data/raw/palma_ratios(Ratios).csv")
+```
+
+#Eliminates all rows in resistance_data, BUT the ncesary columns for data analysis. Fully cleaned resistance_data is put into clean_resistance and viewed at the end.
+
+```{r Table 2}
+#Averages multi-year studies and removes all studies that spanned 3 or more years
+resistance <- resistance_data %>%
+  #All Period values are in one of two forms: 20NN (single-year) or 20NN-20NN (multi-year form) where N is some single-digit number.
+  filter(Num.People > 40) %>%
+  mutate(
+    Period = case_when(
+      #Selectively excludes single year studies from the main if branch, which we know to have a string length of 4 always.
+      str_length(Period) == 9 ~ {
+        #Since all multi-year form follow the established pattern, str_sub breaks the string into the starting year (characters 1 through 4) and ending year (characters 6 - 9). These strings are stored to respective variables and turned into numeric values for calculation.
+        start_year <- str_sub(Period, 1, 4) %>% as.numeric()
+        end_year   <- as.numeric(str_sub(Period, 6, 9)) %>% as.numeric()
+        #Calculates the duration (E_Y - S_Y) of the study and then uses case_when to assign NA to all periods with duration longer than 2 years and averages all other multi-year studies (decimals are truncated).
+        case_when(
+          (end_year - start_year) > 2  ~ NA,
+          #Note: The averaged period is transformed back to character so select() can function.
+          TRUE ~ as.character(floor((start_year + end_year) / 2))
+        )
+      },
+      #Single-Year studies (those with string length 4) are kept the same.
+    TRUE ~ Period
+    ) 
+  )
+resistance <- resistance %>%
+  #Filters out all studies longer than 2 years in duration.
+  filter(is.na(Period) == FALSE) %>%
+  #Selects only the columns used for analysis.
+  mutate(
+    Num.People = as.numeric(Num.People),
+    NRTI = as.numeric(NRTI),
+    NNRTI = as.numeric(NNRTI)
+  )
+#Reverts the percentage into the raw count data of those with resistance to NRTI/NNRTI
+resistance <- resistance %>%
+  mutate(
+    Num.NRTI = round((NRTI / 100) * Num.People),
+    Num.NNRTI = round((NNRTI / 100) * Num.People),
+  )
+#Turns all data types back into characters for filtering purposes
+resistance <- resistance %>%
+  mutate(
+    NRTI = as.character(NRTI),
+    NNRTI = as.character(NNRTI),
+    Num.People = as.character(Num.People),
+    Num.NRTI = as.character(Num.NRTI),
+    Num.NNRTI = as.character(Num.NNRTI)
+  ) %>%
+  select(Countries, Period, NRTI, NNRTI, Num.People, Num.NRTI, Num.NNRTI)
+
+
+#Removes all studies who have participants from a multitude of Countries since it is impossible to isolate each participant to their respective country for anonmity reasons and sake of time.
+resistance <- resistance %>%
+  #Str_Squish removes all whitespace between the countries' names. (There appears to be some unknown character between words in the strings)
+  mutate(Countries = str_squish(Countries)) %>%
+  filter(!Countries %in% c("Belgium Luxembourg",
+                           "4 countries",
+                           "Botswana South Africa",
+                           "Guinea Senegal",
+                           "5 countries",
+                           "Kenya Uganda")) %>%
+#Cleaning up names to align with Palma Ratios Table (for later)
+  mutate(Countries = case_when(Countries == "Russian Federation" ~ "Russia",
+                              Countries == "US" ~ "United States",
+                              Countries == "Viet Nam" ~ "Vietnam",
+                              TRUE ~ Countries)
+  )
+View(resistance)
+```
+
+#Creates Table 2 called other_Stats with Country, Summarized levels of resistance, Palma Ratio, and HIV Prevalance per Year (2010 - 2018)
+
+```{r Table 2}
+#Summarizing studies by Year & their respective Country. Then, palma Ratio columns are re-named so they can be joined with country_resistance. Period turned to character type to work with join().
+country_resistance <- resistance %>%
+  group_by(Countries, Period) %>%
+  mutate(
+    Num.NRTI = as.numeric(Num.NRTI),
+    Num.NNRTI = as.numeric(Num.NNRTI),
+    Num.People = as.numeric(Num.People)
+  ) %>%
+  summarise(
+    mean_Num.NRTI = floor(mean(Num.NRTI)),
+    mean_Num.NNRTI = floor(mean(Num.NNRTI)),
+    mean_people = floor(mean(Num.People))
+  )
+palma_Ratios <- palma_Ratios %>%
+  rename(Countries = Entity, Period = Year) %>%
+  mutate(Period = as.character(Period))
+
+```
+
+```{r Table 2 Cont.}
+#Palma_ratios Period column is changed into a character so it can join with country resistance
+#Joins only the desired column (palma ratio values) to corresponding Country & Years. All NAs are removed.
+country_resistance <- country_resistance %>%
+  left_join(
+    palma_Ratios %>% select(Countries, Period, Palma.ratio..Pretax...Estimated.),
+    by = c("Countries", "Period")
+  )
+country_resistance <- country_resistance %>%
+    filter(!is.na(Palma.ratio..Pretax...Estimated.))
+ #Error in Data Entry---Mexico's Palma Ratio in 2010 was roughly 2.79 and not 20.79 per further research so it is fixed.
+country_resistance$Palma.ratio..Pretax...Estimated.[18] <- 2.796667
+```
+
+#Data Visualization & Writing
+```{r Visual & Writing}
+#Turns NRTI and NNRTI into numeric variables for prelim analysis.
+#Make histo showing NRTI resistance
+resistance <- resistance %>%
+  mutate(
+    NRTI = as.numeric(NRTI),
+    NNRTI = as.numeric(NNRTI)
+  )
+
+resistance %>%
+  ggplot(aes(x = NRTI)) +
+  geom_histogram()
+
+
+resistance %>%
+  ggplot(aes(x = NNRTI)) +
+  geom_histogram()
+
+output_dir <- "../data/processed/"
+full_path_country <- paste0(output_dir,"Country_Avg_Resistance.csv" )
+full_path_total <- paste0(output_dir,"Total_Resistance.csv" )
+write.csv(country_resistance, file = full_path_country, row.names = FALSE) 
+write.csv(resistance, file = full_path_total, row.names = FALSE)
+```

@@ -1,0 +1,202 @@
+---
+title: "Stats Testing & Graphs"
+author: "William Irvin"
+output: html_document
+---
+
+Assumptions:
+For the assumptions of a Linear Regression, we know that the residuals must follow the requirements:
+1) Normality of Residuals
+2) Homodescality of Residuals 
+3) No Multi-colinearity
+4) Independence of Data Points
+
+There is no multi-colinearity issues as the only independent variables being tested are Period (Year) and Palma Ratio separately. Therefore, their effects cannot influence one another. Additionally, all data points are independent as none of the studies did repeated measures testing and it is assumed that no person was included in multiple studies. (It is impossible to for sure know the latter due to anonimity of the data, however, it can be assumed so as the chance is very low.)
+
+Testing of Normality of the Residuals via Histogram and Q-Q plot reveals extremely rightly skewed data. While a log transform of sqrt transform would normally work, the large amounts of 0s means they are much less effective. Therefore, count data will be utilized and a Poisson distribution is best fit for the data.
+
+```{r Testing}
+#Creates a litany of histograms to analyze the distribution of the dependent variable. The nicer figures (going into the poster) are labelled for ez of putting into the poster.
+resistance <- read.csv("../data/processed/Total_Resistance.csv")
+country_resistance <- read.csv("../data/processed/Country_Avg_Resistance.csv")
+Figure_1 <- resistance %>%
+  ggplot(aes(x = NRTI)) +
+  geom_histogram() +
+  labs(
+    x = "% of People NRTI",
+    y = "# Studies"
+  ) +
+  theme_classic()
+Figure_1
+
+Figure_2 <- resistance %>%
+  ggplot(aes(x = NNRTI)) +
+  geom_histogram() +
+  labs(
+    x = "% of People NNRTI",
+    y = "# Studies"
+  ) +
+  theme_classic()
+Figure_2
+
+Figure_3 <- ggplot(resistance, aes(sample = NRTI)) +
+  stat_qq() +
+  geom_qq_line(col = "blue") +
+  labs(title = "Q-Q Plot of NRTI Resistance", x = "Theoretical Normal Quantiles", y = "Sample Quantiles") +
+  theme_classic()
+Figure_3
+
+#Shows the model of the NRTI-Priod residuals, which show a multitude of problems: most importantly lack of Normality (Q-Q Plot) and Heterodescality. Log and Sqrt will not fix this as the effects of the high amounts of zeros will still exist, even if Log(X+N) is utilized. 
+model_NRTI_A <- lm(NRTI ~ Period, data = resistance)
+plot(model_NRTI_A)
+
+model_NNRTI_A <- lm(NNRTI ~ Period, data = resistance)
+plot(model_NNRTI_A)
+```
+#Just a Note Here: The Outliers are very interesting in the data. I chose to keep them as they represent resistant data that is still useful and insightful. Furthermore, it's hard to say the exact influence each and every outlier. Some do have significant effects on Q-Q plot w/ normality, while others do not.
+
+```{r Transformation}
+#Turn the Count variables into Numbers for analysis. Additionally, the palma ratio is turned into a number so statistical analysis can occur. The data must be discrete to be able to run for Poisson Regression.
+country_resistance <- country_resistance %>%
+  mutate(
+    mean_Num.NRTI = as.numeric(mean_Num.NRTI),
+    mean_Num.NNRTI = as.numeric(mean_Num.NNRTI),
+    Palma.ratio..Pretax...Estimated. = as.numeric(Palma.ratio..Pretax...Estimated.)
+  )
+resistance <- resistance %>%
+  mutate(
+    Num.People = as.numeric(Num.People),
+    Num.NRTI = as.numeric(Num.NRTI),
+    Num.NNRTI = as.numeric(Num.NNRTI),
+    Period = as.numeric(Period)
+  )
+```
+
+
+```{r LM}
+#The offset is to minimize the effect of the size of each sample. A sample with the same % resistance, but smaller size will appear as being less significant than the larger sample. 
+model_nrt <- glm(Num.NRTI ~ Period, 
+               data = resistance, family = poisson(link = "log"), offset = log(Num.People))
+plot(model_nrt)
+#Test Result: p = .0934
+summary(model_nrt)
+
+model_nnrt <- glm(Num.NNRTI ~ Period, 
+               data = resistance, family = poisson(link = "log"), offset = log(Num.People))
+plot(model_nrt)
+#States important test result --- p = .260
+summary(model_nnrt)
+
+model_nrt_palma <- glm(mean_Num.NRTI ~ Palma.ratio..Pretax...Estimated., 
+               data = country_resistance, family = poisson(link = "log"), offset = log(mean_people))
+plot(model_nrt_palma)
+#States important test result --- p = 7.26 * 10^-5
+summary(model_nrt_palma)
+
+model_nnrt_palma <- glm(mean_Num.NNRTI ~ Palma.ratio..Pretax...Estimated., 
+               data = country_resistance, family = poisson(link = "log"), offset = log(mean_people))
+plot(model_nnrt_palma)
+#States the important test result --- p = 0.121
+summary(model_nnrt_palma)
+```
+
+```{r Graphing}
+
+Figure_4 <- ggplot(resistance, aes(x = Period, y = Num.NRTI)) +
+  geom_point() +
+  geom_smooth(
+    #Same Method as used in the stats test so that the test analysis are reflected in the graphs
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = Num.People),   #accounts for study sizes
+    #Helps show standard error (dark grey area)
+    se = TRUE
+  ) +
+  #Renames the labels and adjusts sizes of text so that they are more accurate and poster-app.
+  labs(
+    title = "NRTI Resistance Over Time",
+    x = "Year",
+    y = "NRTI Resistance (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+
+Figure_5 <- ggplot(resistance, aes(x = Period, y = Num.NNRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = Num.People),   
+    se = TRUE
+  ) +
+  labs(
+    title = "NNRTI Resistance Over Time",
+    x = "Year",
+    y = "NNRTI Resistance (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+
+Figure_6 <- ggplot(country_resistance, aes(x = Palma.ratio..Pretax...Estimated., y = mean_Num.NRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = mean_people), #accounts for study sizes that are averaged per country & year
+    se = TRUE
+  ) +
+  labs(
+    title = "NRTI Resistance Across Palma Ratio",
+    x = "Palma Ratio",
+    y = "NRTI Resistance (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+
+Figure_7 <- ggplot(country_resistance, aes(x = Palma.ratio..Pretax...Estimated., y = mean_Num.NNRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = mean_people),
+    se = TRUE
+  ) +
+  labs(
+    title = "NNRTI Resistance Across Palma Ratio",
+    x = "Palma Ratio",
+    y = "NNRTI Resistance (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+
+#Creates the pathing and naming for each individual Figure
+output_dir <- "../figures/"
+full_path_f1 <- paste0(output_dir,"Figure1_A.png")
+full_path_f2 <- paste0(output_dir,"Figure2_B.png")
+full_path_f3 <- paste0(output_dir,"Figure3_C.png")
+full_path_f4 <- paste0(output_dir,"Figure4_A.png")
+full_path_f5 <- paste0(output_dir,"Figure5_B.png")
+full_path_f6 <- paste0(output_dir,"Figure6_A.png")
+full_path_f7 <- paste0(output_dir,"Figure7_A.png")
+
+#Sends each Figure to the correct folder, figures
+ggsave(filename = full_path_f1, plot = Figure_1, width = 6, height = 4) 
+ggsave(filename = full_path_f2, plot = Figure_2, width = 6, height = 4) 
+ggsave(filename = full_path_f3, plot = Figure_3, width = 6, height = 4) 
+ggsave(filename = full_path_f4, plot = Figure_4, width = 6, height = 4) 
+ggsave(filename = full_path_f5, plot = Figure_5, width = 6, height = 4) 
+ggsave(filename = full_path_f6, plot = Figure_6, width = 6, height = 4) 
+ggsave(filename = full_path_f7, plot = Figure_7, width = 6, height = 4)
+```

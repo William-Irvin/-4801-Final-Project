@@ -1,0 +1,207 @@
+---
+title: "Meta-Analysis of NRTI and NNRTI Resistance from 2010-2016 Across the World"
+author: "William Irvin^1^"
+institute: "1. Department of Biological Sciences, Georgia Tech"
+date: "2025-12-01"
+references:
+  - id: R-base
+    author:
+    - family: "R Core Team"
+      given: ""
+    title: 'R: A Language and Environment for Statistical Computing'
+    issued:
+      year: 2018
+    URL: https://www.r-project.org
+  - id: R-pagedown
+    author:
+    - family: Xie
+      given: Yihui
+    - family: Lesur
+      given: Romain
+    title: 'Paginate the HTML Output of R Markdown with CSS for Print'
+    issued:
+      year: 2018
+    URL: https://github.com/rstudio/pagedown
+output:
+  pagedown::poster_jacobs:
+    self_contained: false
+    pandoc_args: --mathjax
+---
+
+Background {.block}
+================================================================================
+
+HIV (Human Immunodeficiency Virus) has loomed over society since its discovery in the late 1900s. Due to the initial wave of infections in gay communities, the illness has been falsely stigmatized with homosexual behavior which is looked down upon in many countries. The illness gradually decreases the ability of the immune system, leading to AIDS (Acquired Immunodeficiency Syndrome). People affected by AIDS often face a litany of deadly secondary infections such as Psuedomonas Aeruginosa. 
+
+Fortunately, HIV has become a much more treatable illness with the utilization of antiretroviral therapies. Particularly, nuclear transcripases and non-nuclear transcriptases (NRTI AND NNRTIs) are commonly used as front-line treatments to help prevent the spread of HIV to sexual partners as well as the development of HIV into AIDS. Additionally, they are also used as preventative medication (PrEP) to prevent infection. However, as these drugs become more commonplace and their use in society, issues of resistance arise. The importance of tracking resistance to antiretroviral drugs is that it allows the medical community to make informed decisions of which classifications of drugs should it be used as front-line. Treatments as well as in cocktail therapies.
+
+However, inequality in regions in the World such as Africa have led to difficulties in distribution and consistent use of NRTIs and NNRTIs. Reasons for this vary, but often include difficulty of acquisition and cost. An up-and-coming metric used to measured inequality is the Palma Ratio, a comparison of income held by the top 10% and bottom 40% of a country.
+
+
+Hypothesis
+================================================================================
+The Meta-Analysis Analyzed if the following hypotheses were true over the analyzed timeframe\
+
+1) Has Rates of Resistance to NRTI/NNRTI changed significantly over time?
+
+2) Is inequality a significant factor to NRTI/NNRTI Resistance?
+
+
+
+Methods
+================================================================================
+
+* The Database for NRTI and NNRTI Resistance was obtained from the HIV-1 Surveillance Database from Standford University. Studies with less than 40 people were filtered out to minimize variance. 
+* The Palma Ratio plot was obtained from a public resource (Our World in Data) detailing Palma Ratios for respective countries and their years. These studies were averaged per respective country and year as well as having corresponding Palma Ratios joined in a new column.
+
+```{r, uploading, fig.width=4, fig.height=2, dev='svg', out.width='1', echo=FALSE, quietly = TRUE, results='hide', message=FALSE, warning=FALSE}
+library(tidyverse)
+resistance <- read.csv("../data/processed/Total_Resistance.csv")
+country_resistance <- read.csv("../data/processed/Country_Avg_Resistance.csv")
+```
+
+```{r, fig.width=2, fig.height=1, dev='svg', out.width='70%', echo=FALSE, warning=FALSE, message=FALSE,fig.cap='Initial Histograms of NRTI and NNRTI Rates for each study in the Meta-Analysis.'}
+resistance %>%
+  ggplot(aes(x = NRTI)) +
+  geom_histogram() +
+  labs(
+    x = "% of People NRTI",
+    y = "# Studies"
+  ) +
+  theme_classic()
+  resistance %>%
+  ggplot(aes(x = NNRTI)) +
+  geom_histogram() +
+  labs(
+    x = "% of People NNRTI",
+    y = "# Studies"
+  ) +
+  theme_classic()
+```
+```{r, fig.width=4, fig.height=2, dev='svg', out.width='70%', echo=FALSE, fig.cap='Q-Q Plot of the Number NRTI Resistance. Blue line indicates normality distribution'}
+ggplot(resistance, aes(sample = NRTI)) +
+  stat_qq() +
+  geom_qq_line(col = "blue") +
+  labs(title = "Q-Q Plot of NRTI Resistance", x = "Theoretical Normal Quantiles", y = "Sample Quantiles") +
+  theme_classic()
+```
+- The large amount of right-skew non-normality combined with the number of zeros meant that it would be best to undergo transformation of the data for analysis. While typically transformation with log or square root would be utilized, neither transformed the large amounts of zeros successfully. Therefore, a Poisson Regression approach was an optimal best fit to the model to maximize normality and homoescality while also interpreting zeros in a insightful manner.
+
+To achieve this, the data was transformed in the following ways:
+
+1) Turned the % of and NNRTI into Count by multiplying by the Number of People by the rate of NRTI/NNRTI.
+
+2) Mutated all into numeric variables for proper analysis.
+
+- The data was analyzed via a Poisson regression for the analysis, utilizing the rates of NRTI and NNRTI per study. The respective data was then summarized per Country and Year (ex. China 2015) to be analyzed via Poisson Regression in comparison to Palma Ratios for each Country studied in the time frame.
+
+
+Results
+================================================================================
+
+```{r, fig.width=5, fig.height=3, dev='svg', out.width='70%', echo=FALSE, fig.cap='Analysis via Poisson Regression of the NRTI Rate over 2010-208. Blue line indicates trendline and grey area indcates standard error. (**p=.09**)'}
+
+ggplot(resistance, aes(x = Period, y = Num.NRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = Num.People),   # accounts for study size
+    se = TRUE
+  ) +
+  labs(
+    title = "NRTI Resistance Over Time",
+    x = "Year",
+    y = "NRTI Resistance (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+```
+
+```{r, fig.width=6, fig.height=3, dev='svg', out.width='70%', echo=FALSE, fig.cap='Analysis via Poisson Regression of the NNRTI Rate over 2010-2018. Blue line indicates trendline and grey area indcates standard error. (**p=.26**)'}
+ggplot(resistance, aes(x = Period, y = Num.NNRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = Num.People),   # accounts for study size
+    se = TRUE
+  ) +
+  labs(
+    title = "NNRTI Resistance Over Time",
+    x = "Year",
+    y = "NNRTI Resistance (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+```
+
+```{r, fig.width=6, fig.height=3.5, dev='svg', out.width='70%', echo=FALSE, fig.cap=' Analysis via Poisson Regression of NRTI Resistance Over Palma Ratios. Blue line indicates trendline and grey area indcates standard error. (**p < .05**)' }
+
+ggplot(country_resistance, aes(x = Palma.ratio..Pretax...Estimated., y = mean_Num.NRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = mean_people),
+    se = TRUE
+  ) +
+  labs(
+    title = "NRTI Resistance Over Palma Ratios",
+    x = "Palma Ratio",
+    y = "NRTI Resistant (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+``` 
+
+```{r, fig.width=6, fig.height=3.5, dev='svg', out.width='70%', echo=FALSE, fig.cap=' Analysis via Poisson Regression of NNRTI Resistance Over Palma Ratios. Blue line indicates trendline and grey area indcates standard error. (**p = .12**)' }
+ggplot(country_resistance, aes(x = Palma.ratio..Pretax...Estimated., y = mean_Num.NNRTI)) +
+  geom_point() +
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = poisson(link = "log")),
+    formula = y ~ x,
+    aes(weight = mean_people),
+    se = TRUE
+  ) +
+  labs(
+    title = "NNRTI Resistance Over Palma Ratios",
+    x = "Palma Ratio",
+    y = "NNRTI Resistant (Rate)"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5)
+  )
+```
+
+::: {.block data-position="top-right"}
+Next Steps
+================================================================================
+Next steps include cataloging the amount and possible growth of resistance post-COVID.
+
+Changes in Society Post-2020:
+
+1) Attitude towards health and common stigmas around HIV such as Homosexuality are increasingly changing as the world has become increasingly globalized and further development has occurred in many countries.
+
+2) Increased development of developing countries
+
+3) Healthcare System Changes as a Consequence of the COVID-19 Pandemic
+
+::: {.block data-position="bottom-right"}
+Citations
+================================================================================
+Soo-Yon Rhee, Matthew J. Gonzales, Rami Kantor, Bradley J. Betts, Jaideep Ravela, and Robert W. Shafer (2003) Human immunodeficiency virus reverse transcriptase and protease sequence database. Nucleic Acids Research, 31(1), 298-303.
+
+“Data Page: Income inequality: Palma ratio (before tax)”, part of the following publication: Joe Hasell, Bertha Rohenkohl, Pablo Arriagada, Esteban Ortiz-Ospina, and Max Roser (2023) - “Economic Inequality”. Data adapted from World Inequality Database (WID.world). Retrieved from https://archive.ourworldindata.org/20250909-093708/grapher/palma-ratio-s90s40-ratio.html [online resource] (archived on September 9, 2025).
+  
